@@ -25,8 +25,3 @@ class MemberRemove(Cog):
 def setup(bot: Bot):
     bot.add_cog(MemberRemove(bot))
     print('MemberRemove cog loaded successfully.') 
-
-
-
-
-    
