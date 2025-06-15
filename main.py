@@ -22,7 +22,7 @@ def load_cogs(path = 'cogs'):
 
             else:
                 load_cogs(path + '/' + file)
- 
+
 
 if __name__ == '__main__':
     load_cogs()

@@ -1,7 +1,8 @@
 from discord.ext.commands.bot import Bot
 from discord.ext.commands import Cog
+from datetime import datetime
 
-from discord import Member, Embed, Colour
+from discord import Member, Embed, Color
 
 class MemberRemove(Cog):
     def __init__(self, bot: Bot):
@@ -14,7 +15,8 @@ class MemberRemove(Cog):
 
         embed = Embed(
             title = f'{member.name}#{member.discriminator} Saiu do servidor',
-            colour = Colour.red()
+            color = Color.red(),
+            timestamp=datetime.now()
         ) 
 
         embed.set_thumbnail(url=member.display_avatar.url)
@@ -24,4 +26,3 @@ class MemberRemove(Cog):
 
 def setup(bot: Bot):
     bot.add_cog(MemberRemove(bot))
-    print('MemberRemove cog loaded successfully.') 

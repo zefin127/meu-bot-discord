@@ -1,97 +1,96 @@
+from enum import member
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from discord.ext.commands.bot import Bot
+from discord.ext.commands import Cog
 import os
+from discord import Message, Embed, Color
+from datetime import datetime
+from discord import Member, AuditLogAction
 
-# Carregar variáveis do .env
-load_dotenv()
+class LogDiscord(Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.log_channel_id = 1382820329684078603  # Substitua pelo ID real do seu canal de logs
 
-# Configuração dos intents
-intents = discord.Intents.default()
-intents.moderation = True  # Necessário para acessar logs de auditoria
+    def get_log_channel(self):
+        return self.bot.get_channel(self.log_channel_id)
 
-# Inicialização do bot
-bot = commands.Bot(command_prefix="!", intents=intents)
+    async def get_audit_log_entry(self, guild, action_type):
+        """Busca a última entrada do log de auditoria"""
+        try:
+            entry = await guild.audit_logs(action=action_type).get()
+            return entry
+        except:
+            return None
 
-# ID do canal onde os logs serão enviados
-LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))  # Substitua no .env
+    @Cog.listener('on_member_update')
+    async def on_member_update(self, before: Member, after: Member):
+        # Ignorar se os cargos não mudaram
+        if before.roles == after.roles:
+            return
 
-@bot.event
-async def on_ready():
-    print(f"✅ Bot está online como {bot.user}")
+        # Detectar cargos adicionados/removidos
+        added_roles = [role for role in after.roles if role not in before.roles]
+        removed_roles = [role for role in before.roles if role not in after.roles]
 
-def format_action(action: discord.AuditLogAction):
-    """Formata a ação do log de auditoria"""
-    return str(action).replace("AuditLogAction.", "").upper()
+        log_channel = self.get_log_channel()
+        if not log_channel:
+            print("❌ Canal de logs não encontrado.")
+            return
 
-@bot.event
-async def on_audit_log_entry(entry: discord.AuditLogEntry):
-    """
-    Chamado quando uma entrada de log de auditoria é criada.
-    Apenas se o autor estiver em cache.
-    """
-    print(f"[on_audit_log_entry] Nova ação detectada: {entry.action}")
-    
-    if LOG_CHANNEL_ID == 0:
-        return
+        guild = before.guild
 
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
-    if not log_channel:
-        return
+        # Registrar adição de cargos
+        if added_roles:
+            for role in added_roles:
+                # Buscar moderador via log de auditoria
+                entry = await self.get_audit_log_entry(guild, AuditLogAction.member_role_update)
 
-    action = format_action(entry.action)
-    user = entry.user or "Desconhecido"
-    target = entry.target or "Desconhecido"
-    reason = entry.reason or "Sem motivo"
+                moderator = None
+                reason = "Sem motivo"
 
-    embed = discord.Embed(
-        title=f"📜 Ação de Moderação: {action}",
-        color=discord.Color.orange()
-    )
-    embed.add_field(name="👮 Autor", value=f"{user} ({user.id})" if isinstance(user, discord.User) else user, inline=False)
-    embed.add_field(name="🎯 Alvo", value=str(target), inline=False)
-    embed.add_field(name="📝 Motivo", value=reason, inline=False)
-    embed.set_footer(text=f"ID da ação: {entry.id}")
+                if entry and entry.target.id == after.id:
+                    moderator = entry.user
+                    reason = entry.reason or "Sem motivo"
 
-    try:
-        await log_channel.send(embed=embed)
-    except discord.Forbidden:
-        print("❌ O bot não tem permissão para enviar mensagens no canal de logs.")
-    except Exception as e:
-        print(f"⚠️ Erro ao enviar mensagem no canal de logs: {e}")
+                embed = Embed(
+                    title="🟢 Adicionou cargo",
+                    description=f"{after.mention} recebeu o cargo {role.mention}",
+                    color=Color.green(),
+                    timestamp=datetime.now()
+                )
+                embed.add_field(name="Moderador", value=moderator.mention if moderator else "Desconhecido")
+                embed.add_field(name="Motivo", value=reason, inline=False)
+
+                await log_channel.send(embed=embed)
+
+        # Registrar remoção de cargos
+        if removed_roles:
+            for role in removed_roles:
+                # Buscar moderador via log de auditoria
+                entry = await self.get_audit_log_entry(guild, AuditLogAction.member_role_update)
+
+                moderator = None
+                reason = "Sem motivo"
+
+                if entry and entry.target.id == after.id:
+                    moderator = entry.user
+                    reason = entry.reason or "Sem motivo"
+
+                embed = Embed(
+                    title="🔴 Removeu cargo",
+                    description=f"{after.mention} perdeu o cargo {role.mention}",
+                    color=Color.red(),
+                    timestamp=datetime.now()
+                )
+                embed.add_field(name="Moderador", value=moderator.mention if moderator else "Desconhecido")
+                embed.add_field(name="Motivo", value=reason, inline=False)
+
+                await log_channel.send(embed=embed)
 
 
-@bot.event
-async def on_raw_audit_log_entry(payload: discord.RawAuditLogEntryEvent):
-    """
-    Chamado com dados brutos de entrada de log de auditoria.
-    Funciona mesmo sem cache do usuário.
-    """
-    print(f"[on_raw_audit_log_entry] Nova ação BRUTA detectada: {payload.action}")
-
-    if LOG_CHANNEL_ID == 0:
-        return
-
-    log_channel = bot.get_channel(LOG_CHANNEL_ID)
-    if not log_channel:
-        return
-
-    action = format_action(payload.action)
-    user_id = payload.user_id
-    reason = payload.reason or "Sem motivo"
-
-    embed = discord.Embed(
-        title=f"📦 Ação Bruta de Moderação: {action}",
-        color=discord.Color.dark_orange()
-    )
-    embed.add_field(name="👮 ID do Autor", value=user_id or "Desconhecido", inline=False)
-    embed.add_field(name="🎯 ID do Alvo", value=payload.target_id or "Desconhecido", inline=False)
-    embed.add_field(name="📝 Motivo", value=reason, inline=False)
-
-    try:
-        await log_channel.send(embed=embed)
-    except discord.Forbidden:
-        print("❌ O bot não tem permissão para enviar mensagens no canal de logs.")
-    except Exception as e:
-        print(f"⚠️ Erro ao enviar mensagem no canal de logs: {e}")
+def setup(bot: Bot):
+    bot.add_cog(LogDiscord(bot))
 
